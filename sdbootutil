@@ -2556,10 +2556,16 @@ enroll()
 	# system status
 	if [ "$arg_method" = "tpm2" ] || [ "$arg_method" = "tpm2+pin" ]; then
 		if [ -z "${FDE_SEAL_PCR_LIST}" ]; then
+			if systemd-detect-virt -q; then
+				echo "Virtualized systemd detected ($(systemd-detect-virt)). Dropping PCR0"
+				FDE_SEAL_PCR_LIST=""
+			else
+				FDE_SEAL_PCR_LIST="0,"
+			fi
 			if is_sdboot; then
-				FDE_SEAL_PCR_LIST="0,2,4,7,9"
+				FDE_SEAL_PCR_LIST+="2,4,7,9"
 			elif is_grub2_bls; then
-				FDE_SEAL_PCR_LIST="0,2,4,7,8,9"
+				FDE_SEAL_PCR_LIST+="2,4,7,8,9"
 			else
 				err "Bootloader not detected"
 			fi
