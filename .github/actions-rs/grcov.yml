@@ -1,0 +1,4 @@
+ignore:
+  - "**/.cargo/**"
+ignore-not-existing: true
+llvm: true
