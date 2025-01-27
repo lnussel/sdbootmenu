@@ -278,9 +278,7 @@ reset_rollback()
 # check whether it's a transactional system
 is_transactional()
 {
-	# For running systems we can have this tests instead:
-	#   [ "$(stat -f -c %T /etc)" = "overlayfs" ]
-	grep -q "^overlay /etc" /etc/fstab
+	rpm --query --quiet read-only-root-fs
 }
 
 keyctl_add_with_timeout()
@@ -570,20 +568,10 @@ set_machine_id()
 	local snapshot="$1"
 	local subvol=""
 	[ -z "$snapshot" ] || subvol="${subvol_prefix}/.snapshots/${snapshot}/snapshot"
-	machine_id_files=()
-	if is_transactional && [ -z "$TRANSACTIONAL_UPDATE" ]; then
-		[ -n "$snapshot" ] && machine_id_files+=("/var/lib/overlay/$snapshot/etc/machine-id")
+	machine_id_file="${subvol#"${subvol_prefix}"}/etc/machine-id"
+	if [ -s "$machine_id_file" ]; then
+		read -r machine_id < "$machine_id_file"
 	fi
-	machine_id_files+=(
-		"${subvol#"${subvol_prefix}"}/etc/machine-id"
-	)
-
-	for file in "${machine_id_files[@]}"; do
-		if [ -s "$file" ]; then
-			read -r machine_id < "$file"
-			break
-		fi
-	done
 }
 
 reuse_initrd()
@@ -655,36 +643,6 @@ umount_chroot()
 
 	umount -R "$snapshot_dir"
 	chroot_dir=
-}
-
-mount_etc()
-{
-	local snapshot_dir="$1"
-
-	# Don't mount if we are within a transactional-update shell
-	[ -z "$TRANSACTIONAL_UPDATE" ] || return 0
-
-	IFS=',' read -ra fields <<<\
-	   "$(findmnt --tab-file "${snapshot_dir}/etc/fstab" --noheadings --nofsroot --output OPTIONS /etc | sed 's#/sysroot##g' | sed 's#:/etc,#:'"${snapshot_dir}"'/etc,#g')"
-
-	local lower=""
-	local upper=""
-	for element in "${fields[@]}"; do
-		IFS='=' read -r key value <<<"$element"
-		[ "$key" = "lowerdir" ] && lower="$value"
-		[ "$key" = "upperdir" ] && upper="$value"
-	done
-
-	mount overlay -t overlay -o ro,"lowerdir=${upper}:${lower}" "${snapshot_dir}/etc"
-}
-
-umount_etc()
-{
-	local snapshot_dir="$1"
-
-	# Don't umount if we are within a transactional-update shell
-	[ -z "$TRANSACTIONAL_UPDATE" ] || return 0
-	umount "${snapshot_dir}/etc"
 }
 
 add_version_to_title()
@@ -805,18 +763,11 @@ install_kernel()
 		log_info "generating new initrd"
 
 		[ "$subvol" != "$root_subvol" ] && [ -n "$have_snapshots" ] && mount_chroot "${snapshot_dir}"
-		# In MicroOS we need to be sure to have the same /etc
-		# inside the snapshot.  For example, /etc/crypttab can
-		# have modifications in the overlay that will be
-		# visible once the snapshot is active, but the version
-		# in /.snashots is still the unmodified base
-		is_transactional && mount_etc "${snapshot_dir}"
 		if [ "$subvol" != "$root_subvol" ] && [ -n "$have_snapshots" ]; then
 			chroot "${snapshot_dir}" dracut "${dracut_args[@]}" "$tmpdir/initrd-0" "$kernel_version"
 		else
 			dracut "${dracut_args[@]}" "$tmpdir/initrd-0" "$kernel_version"
 		fi
-		is_transactional && umount_etc "${snapshot_dir}"
 		[ "$subvol" != "$root_subvol" ] && [ -n "$have_snapshots" ] && umount_chroot "${snapshot_dir}"
 	fi
 

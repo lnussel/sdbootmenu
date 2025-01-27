@@ -6,7 +6,7 @@ set -e
 # check whether it's a transactional system
 is_transactional()
 {
-	[ "$(stat -f -c %T /etc)" = "overlayfs" ]
+	rpm --query --quiet read-only-root-fs
 }
 
 # when creating a snapshot we fetch all bls configs from previous snapshot dir,
